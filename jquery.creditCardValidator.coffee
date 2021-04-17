@@ -1,78 +1,122 @@
 ###
-jQuery Credit Card Validator
+jQuery Credit Card Validator 1.2
 
 Copyright 2012 Pawel Decowski
 
-This work is licensed under the Creative Commons Attribution-ShareAlike 3.0
-Unported License. To view a copy of this license, visit:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following conditions:
 
-http://creativecommons.org/licenses/by-sa/3.0/
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
 
-or send a letter to:
-
-Creative Commons, 444 Castro Street, Suite 900,
-Mountain View, California, 94041, USA.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
 ###
 
 $ = jQuery
 
-$.fn.validateCreditCard = (callback) ->
+$.fn.validateCreditCard = (callback, options) ->
     card_types = [
         {
             name: 'amex'
-            pattern: /^3[47]/
+            range: '34,37'
             valid_length: [ 15 ]
         }
         {
             name: 'diners_club_carte_blanche'
-            pattern: /^30[0-5]/
-            valid_length: [ 14 ]
+            range: '300-305'
+            valid_length: [ 16..19 ]
         }
         {
             name: 'diners_club_international'
-            pattern: /^36/
-            valid_length: [ 14 ]
+            range: '3095, 36, 38-39'
+            valid_length: [ 14..19 ]
         }
         {
             name: 'jcb'
-            pattern: /^35(2[89]|[3-8][0-9])/
+            range: '3088-3094, 3096-3102, 3112-3120, 3158-3159, 3337-3349, 3528-3589'
             valid_length: [ 16 ]
         }
         {
             name: 'laser'
-            pattern: /^(6304|630[69]|6771)/
+            range: '6304, 6706, 6709, 6771'
             valid_length: [ 16..19 ]
         }
         {
             name: 'visa_electron'
-            pattern: /^(4026|417500|4508|4844|491(3|7))/
+            range: '4026, 417500, 4508, 4844, 4913, 4917'
             valid_length: [ 16 ]
         }
         {
             name: 'visa'
-            pattern: /^4/
-            valid_length: [ 16 ]
+            range: '4'
+            valid_length: [ 13..19 ]
         }
         {
             name: 'mastercard'
-            pattern: /^5[1-5]/
+            range: '51-55,2221-2720'
+            valid_length: [ 16 ]
+        }
+        {
+            name: 'discover'
+            range: '6011, 622126-622925, 644-649, 65'
+            valid_length: [ 16..19 ]
+        }
+        {
+            name: 'dankort'
+            range: '5019'
             valid_length: [ 16 ]
         }
         {
             name: 'maestro'
-            pattern: /^(5018|5020|5038|6304|6759|676[1-3])/
+            range: '50, 56-69'
             valid_length: [ 12..19 ]
         }
         {
-            name: 'discover'
-            pattern: /^(6011|622(12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9[0-1][0-9]|92[0-5]|64[4-9])|65)/
+            name: 'uatp'
+            range: '1'
+            valid_length: [ 15 ]
+        }
+        {
+            name: 'mir'
+            range: '2200-2204'
             valid_length: [ 16 ]
         }
     ]
 
+    bind = false
+
+    if callback
+        if typeof callback == 'object'
+            # callback has been skipped and only options parameter has been passed
+            options = callback
+            bind = false
+            callback = null
+        else if typeof callback == 'function'
+            bind = true
+
+    options ?= {}
+
+    options.accept ?= (card.name for card in card_types)
+
+    for card_type in options.accept
+        if card_type not in (card.name for card in card_types)
+            throw Error "Credit card type '#{ card_type }' is not supported"
+
     get_card_type = (number) ->
-        for card_type in card_types
-            if number.match card_type.pattern
+        for card_type in (card for card in card_types when card.name in options.accept)
+            r = Range.rangeWithString(card_type.range)
+
+            if r.match(number)
                 return card_type
 
         null
@@ -80,51 +124,53 @@ $.fn.validateCreditCard = (callback) ->
     is_valid_luhn = (number) ->
         sum = 0
 
-        for digit, n in number.split('').reverse().join('')
-            digit = +digit # the + casts the string to int 
+        for digit, n in number.split('').reverse()
+            digit = +digit # the + casts the string to int
             if n % 2
                 digit *= 2
                 if digit < 10 then sum += digit else sum += digit - 9
             else
                 sum += digit
-        
+
         sum % 10 == 0
 
     is_valid_length = (number, card_type) ->
         number.length in card_type.valid_length
-    
+
     validate_number = (number) ->
         card_type = get_card_type number
-        luhn_valid = false
+        luhn_valid = is_valid_luhn number
         length_valid = false
 
         if card_type?
-            luhn_valid = is_valid_luhn number
             length_valid = is_valid_length number, card_type
 
-        callback
-            card_type: card_type
-            luhn_valid: luhn_valid
-            length_valid: length_valid
+        card_type: card_type
+        valid: luhn_valid and length_valid
+        luhn_valid: luhn_valid
+        length_valid: length_valid
 
-    validate = ->
+    validate = =>
         number = normalize $(this).val()
-        validate_number number       
+        validate_number number
 
     normalize = (number) ->
         number.replace /[ -]/g, ''
 
-    this.bind('input', ->
-        $(this).unbind('keyup') # if input event is fired (so is supported) then unbind keyup
-        validate.call this
+    if not bind
+        return validate()
+
+    this.on('input.jccv', =>
+        $(this).off('keyup.jccv') # if input event is fired (so is supported) then unbind keyup
+        callback.call this, validate()
     )
 
     # bind keyup in case input event isn't supported
-    this.bind('keyup', ->
-        validate.call this
+    this.on('keyup.jccv', =>
+        callback.call this, validate()
     )
 
     # run validation straight away in case the card number is prefilled
-    validate.call this
+    callback.call this, validate()
 
     this
